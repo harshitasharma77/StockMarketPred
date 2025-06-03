@@ -1,0 +1,121 @@
+!pip install xgboost
+import numpy as np
+import os
+import plotly as py
+import plotly.io as pio
+import matplotlib.pyplot as plt
+from plotly.subplots import make_subplots
+import plotly.graph_objects as go
+import pandas as pd
+import xgboost as xgb
+from xgboost import plot_importance, plot_tree
+from sklearn.metrics import mean_squared_error
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.metrics import r2_score
+from sklearn.metrics import accuracy_score
+from warnings import simplefilter
+simplefilter(action='ignore', category=Warning)
+simplefilter(action='ignore', category=FutureWarning)
+simplefilter(action='ignore', category=DeprecationWarning)
+
+data = pd.read_csv('AAPL.csv')
+
+df = data.copy()
+data = data.iloc[9344:]
+data.head(5)
+
+# AAPL Stock Prices from 2018 to 2023
+fig = go.Figure()
+fig.add_trace(go.Scatter(x=data.Date, y=data.Close))
+fig.update_layout(title='AAPL Stock Prices from 2018 to 2023')
+fig.show()
+
+# AAPL Stock Prices and Volume from 2018 to 2023
+fig = make_subplots(rows=3,cols=1)
+fig.add_trace(go.Ohlc(x=data.Date,open=data.Open,high=data.High,low=data.Low,close=data.Close,name='Price'),row=1,col=1)
+fig.add_trace(go.Scatter(x=data.Date, y=data.Volume, name='Volume'),row=3,col=1)
+fig.update(layout_xaxis_rangeslider_visible=False)
+fig.update_layout(title='AAPL Stock Prices and Volume from 2018 to 2023')
+fig.show()
+
+# Splitting AAPL Stock data
+testsize = 0.10
+validsize = 0.10
+test_split_idx = int(data.shape[0]*(1-testsize))
+valid_split_idx = int(data.shape[0]*(1-(validsize+testsize)))
+train_data = data.iloc[:valid_split_idx].copy()
+valid_data = data.iloc[valid_split_idx+1:test_split_idx].copy()
+test_data = data.iloc[test_split_idx+1:].copy()
+fig = go.Figure()
+fig.add_trace(go.Scatter(x=train_data.Date, y=train_data.Close, name='Training'))
+fig.add_trace(go.Scatter(x=valid_data.Date, y=valid_data.Close, name='Validation'))
+fig.add_trace(go.Scatter(x=test_data.Date,  y=test_data.Close,  name='Test'))
+fig.update_layout(title='Splitting AAPL Stock data')
+fig.show()
+
+drop_columns = ['Date', 'Volume', 'Open', 'Low', 'High']
+train_data = train_data.drop(columns=drop_columns)
+valid_data = valid_data.drop(columns=drop_columns)
+test_data = test_data.drop(columns=drop_columns)
+
+X_train = train_data.drop(columns='Close')
+y_train = train_data['Close'].copy()
+X_valid = valid_data.drop(columns='Close')
+y_valid = valid_data['Close'].copy()
+X_test = test_data.drop(columns='Close')
+y_test = test_data['Close'].copy()
+print(X_train)
+print(y_train)
+
+evaluation = [(X_train, y_train), (X_valid, y_valid)]
+
+params = {
+    'objective': 'reg:squarederror',  # Specify the regression objective
+    'max_depth': 8,                  # Maximum depth of the tree
+    'learning_rate': 0.2,           # Learning rate
+    'n_estimators': 100,             # Number of boosting rounds
+    'gamma': 0.005,               # Fraction of samples used for training
+    'random_state': 42,           # Fraction of features used for training
+    "enable_categorical": True,
+}
+
+model = xgb.XGBRegressor(**params)
+model.fit(X_train, y_train, eval_set=evaluation, verbose=False)
+
+# mse
+y_pred = model.predict(X_test)
+print(f'y_true = {np.array(y_test)[:5]}')
+print(f'y_pred = {y_pred[:5]}')
+print(f'mean_squared_error = {mean_squared_error(y_test, y_pred)}')
+
+# r2 score
+r2_score(y_test,y_pred)
+
+predicted_prices = data.iloc[test_split_idx+1:].copy()
+predicted_prices['Close'] = y_pred
+
+fig = make_subplots(rows=2, cols=1)
+fig.add_trace(go.Scatter(x=data.Date, y=data.Close,
+                         name='Real Value',
+                         marker_color='Red'), row=1, col=1)
+
+fig.add_trace(go.Scatter(x=predicted_prices.Date,
+                         y=predicted_prices.Close,
+                         name='Prediction',
+                         marker_color='Green'), row=1, col=1)
+
+fig.add_trace(go.Scatter(x=predicted_prices.Date,
+                         y=y_test,
+                         name='Real Value',
+                         marker_color='Red',
+                         showlegend=False), row=2, col=1)
+
+fig.add_trace(go.Scatter(x=predicted_prices.Date,
+                         y=y_pred,
+                         name='Prediction',
+                         marker_color='Green',
+                         showlegend=False), row=2, col=1)
+fig.update_layout(title='AAPL Stock Price Prediction using XGBoost')
+
+fig.show()
